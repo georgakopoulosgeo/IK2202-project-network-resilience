@@ -1,0 +1,22 @@
+20:48:50 C1 baseline: 10 iteration(s), roughly 26 min
+20:48:50 results: /home/georgegeo/v2i-lab/shared/results/C1_20260923_204842
+20:48:50 [iter_01] start: warm-up 22s, traffic 102s
+20:49:16 [iter_01] primary failed silently - observing 80s
+20:50:43 [iter_01] primary restored, waiting for OSPF ...
+[analyze] iter_01: failover=36684.719 ms (route switch 36686.353 ms) | V2I lost total=18345 [pre 0, blackout 18341, post 1] | delay p99 pre=44.376 ms post=100.201 ms | post >20ms or lost=33.193%
+20:50:54 [iter_02] start: warm-up 23s, traffic 103s
+20:51:21 [iter_02] primary failed silently - observing 80s
+20:52:48 [iter_02] primary restored, waiting for OSPF ...
+[analyze] iter_02: failover=31843.776 ms (route switch 31844.78 ms) | V2I lost total=15927 [pre 3, blackout 15920, post 3] | delay p99 pre=48.969 ms post=99.892 ms | post >20ms or lost=96.993%
+[analyze]   WARNING: 3 telemetry packets lost BEFORE the failure (steady state is not clean: check background rate / queue)
+20:53:14 [iter_03] start: warm-up 24s, traffic 104s
+20:53:42 [iter_03] primary failed silently - observing 80s
+20:55:09 [iter_03] primary restored, waiting for OSPF ...
+[analyze] iter_03: failover=30680.758 ms (route switch 30680.253 ms) | V2I lost total=15342 [pre 0, blackout 15339, post 3] | delay p99 pre=46.295 ms post=100.002 ms | post >20ms or lost=99.507%
+20:55:35 [iter_04] start: warm-up 16s, traffic 96s
+20:55:56 [iter_04] primary failed silently - observing 80s
+20:57:22 [iter_04] primary restored, waiting for OSPF ...
+[analyze] iter_04: failover=37380.66 ms (route switch 37380.662 ms) | V2I lost total=18711 [pre 13, blackout 18689, post 9] | delay p99 pre=45.002 ms post=100.278 ms | post >20ms or lost=35.467%
+[analyze]   WARNING: 13 telemetry packets lost BEFORE the failure (steady state is not clean: check background rate / queue)
+20:57:36 [iter_05] start: warm-up 17s, traffic 97s
+20:57:57 [iter_05] primary failed silently - observing 80s

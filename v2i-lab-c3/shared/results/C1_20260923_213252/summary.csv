@@ -1,0 +1,6 @@
+iteration,convergence_s,delay_pre_ms,delay_post_ms,delay_post_p99_ms,v2i_lost,v2i_loss_pct,v2i_lost_after_reroute,cumulative_lost
+iter_1,35.205,1.82,36.32,99.29,17603,39.12,1,3072
+iter_2,30.885,2.52,38.37,99.63,15447,34.33,5,3469
+iter_3,30.459,2.42,37.96,99.21,15232,33.85,1,4877
+iter_4,30.261,1.89,38.28,99.38,15134,33.63,3,4896
+iter_5,32.38,1.55,41.4,99.26,16190,35.98,1,5367

@@ -1,0 +1,16 @@
+ip addr add 10.0.0.1/24 dev eth0
+ip addr add 10.0.1.1/30 dev eth1
+ip addr add 10.0.2.1/30 dev eth2
+# start the daemons
+chown -R frr:frr /etc/frr
+chmod 640 /etc/frr/*.conf
+/etc/init.d/frr start
+# primary link at 100Mbps because the VM maxes out at 134Mbps
+tc qdisc add dev eth1 root handle 1: htb default 1
+tc class add dev eth1 parent 1: classid 1:1 htb rate 100mbit ceil 100mbit
+# backup link at 10Mbps
+tc qdisc add dev eth2 root handle 1: htb default 1
+tc class add dev eth2 parent 1: classid 1:1 htb rate 10mbit ceil 10mbit
+# Bottleneck queue sizes
+tc qdisc add dev eth2 parent 1:1 handle 10: bfifo limit 125000     # r1 backup (10 Mbit × 100 ms)
+tc qdisc add dev eth1 parent 1:1 handle 10: bfifo limit 1250000    # r1 primary (100 Mbit × 100 ms)

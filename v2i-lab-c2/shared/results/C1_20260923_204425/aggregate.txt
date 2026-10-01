@@ -1,0 +1,12 @@
+[aggregate] 1 iterations (1 with warnings) -> summary.csv, stats.csv
+metric                     n        mean          sd  95% CI +/-
+failover_ms                1   37750.885         0.0         n/a
+route_switch_ms            1   37752.489         0.0         n/a
+v2i_lost_total             1     18879.0         0.0         n/a
+blackout_lost              1     18874.0         0.0         n/a
+post_lost                  1         1.0         0.0         n/a
+pre_delay_p99_ms           1      43.897         0.0         n/a
+post_delay_p99_ms          1      99.517         0.0         n/a
+post_jitter_ms             1       0.534         0.0         n/a
+post_exceed_20ms_pct       1      41.413         0.0         n/a
+post_exceed_100ms_pct      1       0.253         0.0         n/a

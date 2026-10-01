@@ -1,0 +1,17 @@
+{
+  "run_id": 9,
+  "dst": "10.0.3.2",
+  "port": 5005,
+  "rate_pps": 500.0,
+  "interval_ns": 2000000,
+  "payload_bytes": 300,
+  "dscp": 46,
+  "packets_sent": 48000,
+  "packets_planned": 48000,
+  "send_errors": 0,
+  "start_real_ns": 1790198265670590591,
+  "end_real_ns": 1790198361668862513,
+  "max_lag_us": 120821.3,
+  "late_sends": 675,
+  "stopped_early": false
+}
