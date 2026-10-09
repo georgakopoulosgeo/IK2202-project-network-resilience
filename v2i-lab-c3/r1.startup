@@ -1,19 +1,32 @@
+# r1: eth0 = RSU, eth1 = primary (100 Mbit/s), eth2 = backup (10 Mbit/s)
+# C1: comment [BFD]     C2: as is     C3: comment [FIFO], uncomment [QoS]
+
 ip addr add 10.0.0.1/24 dev eth0
 ip addr add 10.0.1.1/30 dev eth1
 ip addr add 10.0.2.1/30 dev eth2
-# start the daemons
+
+# [BFD] start bfdd (must be before frr start)
+sed -i 's/^bfdd=no/bfdd=yes/' /etc/frr/daemons
+
 chown -R frr:frr /etc/frr
 chmod 640 /etc/frr/*.conf
 /etc/init.d/frr start
-# primary link at 100Mbps because the VM maxes out at 134Mbps
+
+# primary: 100 Mbit/s, 1.25 MB drop-tail FIFO (100 ms)
 tc qdisc add dev eth1 root handle 1: htb default 1
 tc class add dev eth1 parent 1: classid 1:1 htb rate 100mbit ceil 100mbit
-# backup link: 10 Mbit/s shaper with strict priority inside (C3)
+tc qdisc add dev eth1 parent 1:1 handle 10: bfifo limit 1250000
+
+# backup: 10 Mbit/s
 tc qdisc add dev eth2 root handle 1: htb default 1
 tc class add dev eth2 parent 1: classid 1:1 htb rate 10mbit ceil 10mbit
-tc qdisc add dev eth2 parent 1:1 handle 10: prio bands 2 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
-tc qdisc add dev eth2 parent 10:1 handle 11: bfifo limit 125000   # high band
-tc qdisc add dev eth2 parent 10:2 handle 12: bfifo limit 125000   # low band (same buffer as C1/C2)
-# high band: V2I (DSCP EF = 0xb8) and routing control (DSCP CS6 = 0xc0: OSPF, BFD)
-tc filter add dev eth2 parent 10: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc flowid 10:1
-tc filter add dev eth2 parent 10: protocol ip prio 2 u32 match ip dsfield 0xc0 0xfc flowid 10:1
+
+# [FIFO] C1, C2: one 125 kB drop-tail FIFO (100 ms)
+tc qdisc add dev eth2 parent 1:1 handle 10: bfifo limit 125000
+
+# [QoS] C3: strict priority, 125 kB FIFO per band; high band = V2I (EF) + OSPF/BFD (CS6)
+#tc qdisc add dev eth2 parent 1:1 handle 10: prio bands 2 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+#tc qdisc add dev eth2 parent 10:1 handle 11: bfifo limit 125000
+#tc qdisc add dev eth2 parent 10:2 handle 12: bfifo limit 125000
+#tc filter add dev eth2 parent 10: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc flowid 10:1
+#tc filter add dev eth2 parent 10: protocol ip prio 2 u32 match ip dsfield 0xc0 0xfc flowid 10:1
