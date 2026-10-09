@@ -1,8 +1,0 @@
-{
-  "run_id": 8,
-  "received": 35002,
-  "duplicates": 0,
-  "foreign_or_stale": 0,
-  "kernel_rx_timestamps": 35002,
-  "socket_drops": 0
-}

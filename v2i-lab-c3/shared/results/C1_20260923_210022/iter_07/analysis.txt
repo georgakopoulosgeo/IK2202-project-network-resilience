@@ -1,2 +1,0 @@
-[analyze] iter_07: failover=31622.104 ms (route switch 31620.107 ms) | V2I lost total=15818 [pre 2, blackout 15810, post 4] | delay p99 pre=15.707 ms post=100.24 ms | post >20ms or lost=23.207%
-[analyze]   WARNING: 2 telemetry packets lost BEFORE the failure (steady state is not clean: check background rate / queue)

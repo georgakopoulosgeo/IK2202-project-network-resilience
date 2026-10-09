@@ -1,1 +1,0 @@
-{"t_fail_start_ns": 1790198157953694237, "t_fail_end_ns": 1790198157954963528, "method": "tc matchall drop on r1 eth1 egress+ingress, link stays up"}

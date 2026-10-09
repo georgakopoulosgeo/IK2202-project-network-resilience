@@ -1,1 +1,0 @@
-[analyze] iter_10: failover=34408.96 ms (route switch 34408.08 ms) | V2I lost total=17205 [pre 0, blackout 17203, post 0] | delay p99 pre=71.623 ms post=99.246 ms | post >20ms or lost=37.047%
