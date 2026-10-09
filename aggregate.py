@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Numbers of one run, computed from its raw data in results/:
-#   python3 aggregate.py results/C2_20261009_120000
-# Writes results/<run>/aggregate/:
+# Numbers of one run, computed from its raw data in results/raw_data/:
+#   python3 aggregate.py results/raw_data/C2_20261009_120000
+# Writes results/raw_data/<run>/aggregate/:
 #   summary.csv     one row of metrics per iteration
 #   mean_std.csv    mean, std, min and max of every metric over the iterations
 #   timeseries.csv  every iteration in 0.5 s bins around the failure (used by analyze.py)
@@ -62,6 +62,7 @@ def timeseries(v2i, bg):
     ts = pd.crosstab(t, v2i.status, normalize="index").reindex(columns=STATUS, fill_value=0) * 100
     ts.columns = ["v2i_ontime_pct", "v2i_late_pct", "v2i_lost_pct"]
     ts["v2i_delay_ms"] = v2i.delay_ms.groupby(t).mean()
+    ts["v2i_lost_per_s"] = (v2i.status == "lost").groupby(t).sum() / BIN
     # goodput = payload received per 0.5 s, by ARRIVAL time (lost packets have no arrival time)
     t_rx = np.floor((v2i.t + v2i.delay_ms / 1000) / BIN) * BIN
     ts["v2i_mbps"] = v2i.delay_ms.groupby(t_rx).count() * V2I_BYTES * 8 / BIN / 1e6

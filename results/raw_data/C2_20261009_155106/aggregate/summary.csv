@@ -1,0 +1,2 @@
+iteration,bg_delivered_pct_post,bg_drop_pct_post,bg_drop_pct_pre,bg_mbps_post,bg_mbps_pre,bg_retrans_post,bg_rtt_ms_post,bg_rtt_ms_pre,convergence_s,r1_drops_backup,r1_drops_primary,v2i_delay_ms_post,v2i_delay_ms_pre,v2i_delay_p99_ms_post,v2i_late_pct_post,v2i_late_pct_pre,v2i_lost,v2i_lost_after_reroute,v2i_lost_pct_post,v2i_lost_pct_pre,v2i_mbps_post,v2i_mbps_pre,v2i_ontime_pct_post,v2i_ontime_pct_pre
+iter_1,11.666,0.888,0.0,8.166,69.893,505,94.262,3.185,0.304,389,311,91.811,2.226,101.905,99.125,0.04,166,12,0.407,0.03,1.195,1.2,0.467,99.93

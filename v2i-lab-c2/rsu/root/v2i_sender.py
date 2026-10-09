@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # V2I telemetry sender (runs on the RSU).
-# 500 pkt/s = 50 vehicles x 10 Hz, 300-byte payload: seq (8 B) + send time (8 B) + padding.
+# 1000 pkt/s = 100 vehicles x 10 Hz, 600-byte payload: seq (8 B) + send time (8 B) + padding.
+# in mbps = 1000 * 600 * 8 / 1e6 = 4.8 Mbit/s
 # Usage: python3 v2i_sender.py DURATION_S
 import socket, struct, sys, time
  
 DEST = ("10.0.3.2", 5555)
-RATE = 500            # packets per second
-PAYLOAD_SIZE = 300    # bytes
+RATE = 1000            # packets per second
+PAYLOAD_SIZE = 600    # bytes
 DSCP_EF = 46          # not used in C1/C2, lets tc classify the telemetry in C3
  
 duration = float(sys.argv[1])

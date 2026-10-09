@@ -1,0 +1,1 @@
+configuration=c3 iterations=1 warmup=20s after=80s

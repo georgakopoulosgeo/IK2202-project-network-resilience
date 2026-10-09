@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-# Figures of one run, from results/<run>/ (aggregate.py is run first if needed):
-#   python3 analyze.py results/C2_20261009_120000
-#   python3 analyze.py results/C1_... results/C2_... results/C3_...    -> also the comparison
-# One figure with 4 panels (left: background TCP, right: V2I; top: delay, bottom: goodput):
-#   <run>/plots/iter_N.png         one iteration
-#   <run>/plots/average.png        all iterations (thin lines) and their mean (thick line)
-#   results/comparison.png, .csv   mean +/- std of each configuration (several runs)
+# Figures of one run (aggregate.py is run first if needed):
+#   python3 analyze.py results/raw_data/C2_20261009_120000
+#   python3 analyze.py results/raw_data/C1_... results/raw_data/C2_... results/raw_data/C3_...   (+ comparison)
+# One figure with 2 panels (left: background TCP, right: V2I): delay over time, and on a
+# second y-axis the packets dropped per second.
+#   results/plots/<run>/iter_N.png      one iteration
+#   results/plots/<run>/average.png     all iterations (thin lines) and their mean (thick line)
+#   results/plots/comparison/           mean +/- std of each configuration (several runs)
 import os, sys
-import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from aggregate import aggregate, load_v2i, LATE_MS, OFFERED_MBPS, V2I_MBPS
+from aggregate import aggregate, load_v2i, BIN, LATE_MS
 
-BACKUP_MBPS = 10
 # colour-blind safe palette (Okabe-Ito): (light = packets / single iterations, dark = mean)
 V2I_COLORS = ("#56B4E9", "#0072B2")
 TCP_COLORS = ("#CC79A7", "#882E72")
-LOST_COLOR = "#D55E00"
+DROP_COLOR = "#D55E00"
 plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
                      "font.size": 17, "axes.titlesize": 18, "axes.labelsize": 18, "xtick.labelsize": 16,
                      "ytick.labelsize": 16, "legend.fontsize": 17, "figure.titlesize": 22,
@@ -34,58 +33,49 @@ def lines(ax, ts_list, mean, col, colors, label):
     ax.plot(mean.index, mean[col], color=colors[1], label=label)
 
 
-def loss_marks(ax, t, label):
-    """Red ticks along the bottom of a panel at the times packets were lost."""
-    ax.plot(t, np.full(len(t), 0.03), "|", color=LOST_COLOR, ms=20, mew=2.5,
-            transform=ax.get_xaxis_transform(), label=label)
+def drops(ax, t, per_s, label):
+    """Second y-axis on the right: packets dropped per second, drawn behind the delay."""
+    ax2 = ax.twinx()
+    ax2.fill_between(t, per_s, step="post", color=DROP_COLOR, alpha=0.25, lw=0)
+    ax2.step(t, per_s, where="post", color=DROP_COLOR, lw=2, label=label)
+    ax2.set_ylim(0, max(per_s.max(), 1) * 1.15)
+    ax2.set_ylabel("packets dropped per second", color=DROP_COLOR)
+    ax2.tick_params(axis="y", colors=DROP_COLOR)
+    ax2.spines["right"].set_visible(True)
+    ax2.spines["right"].set_color(DROP_COLOR)
+    ax.set_zorder(ax2.get_zorder() + 1)                     # delay on top of the drops
+    ax.patch.set_visible(False)
+    return ax2
 
 
-def plot_run(ts_list, lost_t, m, title, path, packets=None):
+def plot_run(ts_list, m, title, path, packets=None):
     mean = pd.concat(ts_list).groupby("t").mean(numeric_only=True)
-    fig, ((tcp_d, v2i_d), (tcp_g, v2i_g)) = plt.subplots(2, 2, figsize=(22, 13))
+    fig, (tcp, v2i) = plt.subplots(1, 2, figsize=(24, 8))
 
-    # top left: background TCP delay = the kernel's RTT estimate (none while nothing arrives)
-    lines(tcp_d, ts_list, mean, "bg_rtt_ms", TCP_COLORS, "background TCP (4 flows)")
-    loss_marks(tcp_d, mean.index[mean.bg_retrans > 0], "TCP segment retransmitted (= lost)")
-    tcp_d.set_ylabel("round-trip time (ms)")
-    tcp_d.set_title(f"Background TCP: delay\nmean RTT {m['bg_rtt_ms_pre']:.1f} ms before, "
-                    f"{m['bg_rtt_ms_post']:.1f} ms after the failure")
+    # left: background TCP delay = the kernel's RTT estimate (none while nothing arrives);
+    #       drops = retransmitted segments, counted when TCP notices the loss
+    lines(tcp, ts_list, mean, "bg_rtt_ms", TCP_COLORS, "background TCP RTT (4 flows)")
+    tcp.set_ylabel("round-trip time (ms)")
+    tcp.set_title(f"Background TCP\nmean RTT {m['bg_rtt_ms_pre']:.1f} ms before, {m['bg_rtt_ms_post']:.1f} ms "
+                  f"after the failure; {m['bg_drop_pct_post']:.2f}% of segments lost after")
+    tcp2 = drops(tcp, mean.index, mean.bg_retrans / BIN, "TCP segments lost (retransmitted)")
 
-    # top right: V2I one-way delay of every packet (one iteration) and its mean per 0.5 s
+    # right: V2I one-way delay of every packet (one iteration) and its mean per 0.5 s;
+    #        drops = V2I packets lost, by the time they were sent
     if packets is not None:
-        v2i_d.scatter(packets.t, packets.delay_ms, s=4, color=V2I_COLORS[0], alpha=0.35)
-        v2i_d.scatter([], [], s=80, color=V2I_COLORS[0], label="V2I packet")   # bigger dot for the legend
-    lines(v2i_d, ts_list, mean, "v2i_delay_ms", V2I_COLORS, "V2I telemetry (mean per 0.5 s)")
-    v2i_d.axhline(LATE_MS, color=LOST_COLOR, ls=":", lw=3, label=f"{LATE_MS} ms V2I budget")
-    loss_marks(v2i_d, lost_t, "V2I packet lost")
-    v2i_d.set_ylabel("one-way delay (ms)")
-    v2i_d.set_title(f"V2I telemetry: delay\nafter the failure: on time {m['v2i_ontime_pct_post']:.1f}%, "
-                    f"late {m['v2i_late_pct_post']:.1f}%, lost {m['v2i_lost_pct_post']:.1f}%")
+        v2i.scatter(packets.t, packets.delay_ms, s=4, color=V2I_COLORS[0], alpha=0.35)
+        v2i.scatter([], [], s=80, color=V2I_COLORS[0], label="V2I packet")   # bigger dot for the legend
+    lines(v2i, ts_list, mean, "v2i_delay_ms", V2I_COLORS, f"V2I delay (mean per {BIN} s)")
+    v2i.axhline(LATE_MS, color="#E69F00", ls=":", lw=3, label=f"{LATE_MS} ms V2I budget")
+    v2i.set_ylabel("one-way delay (ms)")
+    v2i.set_title(f"V2I telemetry\nafter the failure: on time {m['v2i_ontime_pct_post']:.1f}%, "
+                  f"late {m['v2i_late_pct_post']:.1f}%, lost {m['v2i_lost_pct_post']:.1f}%")
+    v2i2 = drops(v2i, mean.index, mean.v2i_lost_per_s, "V2I packets lost")
 
-    # bottom left: background TCP goodput
-    lines(tcp_g, ts_list, mean, "bg_mbps", TCP_COLORS, None)
-    tcp_g.axhline(OFFERED_MBPS, color="0.45", ls=":", lw=3, label="offered load")
-    tcp_g.axhline(BACKUP_MBPS, color=LOST_COLOR, ls="-.", lw=3, label="backup capacity (10 Mbit/s)")
-    tcp_g.set_ylim(0, OFFERED_MBPS * 1.12)
-    tcp_g.set_title(f"Background TCP: goodput\n{m['bg_mbps_pre']:.1f} Mbit/s before, {m['bg_mbps_post']:.1f} "
-                    f"Mbit/s after ({m['bg_delivered_pct_post']:.0f}% of offered, "
-                    f"{m['bg_drop_pct_post']:.2f}% segments lost)")
-
-    # bottom right: V2I goodput
-    lines(v2i_g, ts_list, mean, "v2i_mbps", V2I_COLORS, None)
-    v2i_g.axhline(V2I_MBPS, color="0.45", ls=":", lw=3, label="offered load")
-    v2i_g.set_ylim(0, V2I_MBPS * 1.25)
-    v2i_g.set_title(f"V2I telemetry: goodput\n{m['v2i_mbps_pre']:.2f} Mbit/s before, "
-                    f"{m['v2i_mbps_post']:.2f} Mbit/s after the failure")
-
-    # same time axis on all panels, from the first to the last full 10 s, no empty margins
+    # same time axis on both panels, from the first to the last full 10 s, no empty margins
     x0, x1 = int(round(mean.index.min() / 10) * 10), int(round(mean.index.max() / 10) * 10)
-    for ax in (tcp_d, v2i_d):
+    for ax in (tcp, v2i):
         ax.set_yscale("log")
-        ax.set_ylim(bottom=ax.get_ylim()[0] / 4)            # room for the loss marks under the data
-    for ax in (tcp_g, v2i_g):
-        ax.set_ylabel("goodput (Mbit/s)")
-    for ax in (tcp_d, v2i_d, tcp_g, v2i_g):
         ax.axvline(0, color="black", lw=2.5, label="primary link fails")
         ax.axvline(m["convergence_s"], color="0.4", ls="--", lw=2.5, label="first packet via backup")
         ax.set_xlim(x0, x1)
@@ -95,11 +85,11 @@ def plot_run(ts_list, lost_t, m, title, path, packets=None):
 
     # one legend for the whole figure, below it (each label once)
     legend = {}
-    for ax in (tcp_d, v2i_d, tcp_g, v2i_g):
+    for ax in (tcp, tcp2, v2i, v2i2):
         for h, lab in zip(*ax.get_legend_handles_labels()):
             legend.setdefault(lab, h)
     fig.suptitle(title, fontweight="bold")
-    fig.tight_layout(h_pad=2.5, w_pad=3)
+    fig.tight_layout(w_pad=4)
     fig.legend(legend.values(), legend.keys(), loc="upper center", bbox_to_anchor=(0.5, 0),
                ncol=4, frameon=False)
     fig.savefig(path, bbox_inches="tight")
@@ -112,6 +102,7 @@ def compare(runs, folder):
               ("v2i_late_pct_post", "V2I late (%)"), ("v2i_lost_pct_post", "V2I lost (%)"),
               ("v2i_delay_ms_post", "V2I mean delay (ms)"), ("bg_mbps_post", "TCP goodput (Mbit/s)"),
               ("bg_rtt_ms_post", "TCP RTT (ms)"), ("bg_drop_pct_post", "TCP segments lost (%)")]
+    os.makedirs(folder, exist_ok=True)
     fig, axes = plt.subplots(2, 4, figsize=(22, 10))
     for ax, (col, name) in zip(axes.flat, panels):
         ax.bar(list(runs), [s[col].mean() for s in runs.values()], yerr=[s[col].std() for s in runs.values()],
@@ -137,24 +128,24 @@ for run in [r.rstrip("/") for r in sys.argv[1:]]:
     label = os.path.basename(run).split("_")[0]             # C1, C2 or C3
     s = pd.read_csv(f"{run}/aggregate/summary.csv")
     ts_all = pd.read_csv(f"{run}/aggregate/timeseries.csv")
-    os.makedirs(f"{run}/plots", exist_ok=True)
+    # results/raw_data/<run>  ->  results/plots/<run>
+    plots = os.path.join(os.path.dirname(os.path.dirname(run)), "plots", os.path.basename(run))
+    os.makedirs(plots, exist_ok=True)
 
-    ts_list, lost_list = [], []
+    ts_list = []
     for _, m in s.iterrows():                               # one figure per iteration
         ts = ts_all[ts_all.iteration == m.iteration]
         packets, _ = load_v2i(f"{run}/{m.iteration}")
-        lost = packets.t[packets.status == "lost"]
         ts_list.append(ts)
-        lost_list.append(lost)
-        plot_run([ts], lost, m, f"{label}, {m.iteration}: convergence {m.convergence_s:.2f} s",
-                 f"{run}/plots/{m.iteration}.png", packets)
+        plot_run([ts], m, f"{label}, {m.iteration}: convergence {m.convergence_s:.2f} s",
+                 f"{plots}/{m.iteration}.png", packets)
 
     m = s.mean(numeric_only=True)                           # one figure for all iterations together
     n = f"{len(s)} iteration{'s' if len(s) > 1 else ''}"
-    plot_run(ts_list, pd.concat(lost_list), m, f"{label}, mean of {n} (thin lines: single iterations): "
-             f"convergence {m.convergence_s:.2f} s", f"{run}/plots/average.png")
-    print(f"plots written to {run}/plots/")
+    plot_run(ts_list, m, f"{label}, mean of {n} (thin lines: single iterations): "
+             f"convergence {m.convergence_s:.2f} s", f"{plots}/average.png")
+    print(f"plots written to {plots}/")
     runs[label] = s
 
 if len(runs) > 1:
-    compare(runs, os.path.dirname(run))
+    compare(runs, os.path.join(os.path.dirname(os.path.dirname(run)), "plots", "comparison"))

@@ -3,7 +3,8 @@
 #   c1 = native OSPF,  c2 = OSPF + BFD,  c3 = OSPF + BFD + strict-priority QoS
 # Deploy the lab by hand first (cd v2i-lab-c2 && kathara lstart), then from this folder:
 #   ./run_failover.sh c2 5            # configuration, iterations (default 5)
-# Output: results/C2_<date>/iter_N/ (raw data), aggregate/ (numbers), plots/ (figures)
+# Output: results02/raw_data/C2_<date>/ (iter_N/ = raw data, aggregate/ = numbers)
+#         results02/plots/C2_<date>/     (figures)
 
 CONF=${1,,}                         # c1, c2 or c3 (C2 also works)
 N=${2:-5}
@@ -17,7 +18,7 @@ WARMUP=20                           # s of normal traffic before the failure
 AFTER=80                            # s observed after the failure (C1 needs ~40 s to converge)
 DUR=$((WARMUP + AFTER))
 RUN=${CONF^^}_$(date +%Y%m%d_%H%M%S)
-OUT=$BASE/results/$RUN              # final place of the data
+OUT=$BASE/results02/raw_data/$RUN     # final place of the data
 STAGE=$LAB/shared/current           # the same folder is /shared/current inside the devices
 
 # kathara commands only work inside the folder of the deployed lab
@@ -92,12 +93,14 @@ for i in $(seq 1 "$N"); do
     echo "$((p1 - p0)) $((b1 - b0))" > "$STAGE/r1_drops"
     restore_primary
 
-    # 5. files written inside the devices belong to root: give them to us, move to results/
+    # 5. files written inside the devices belong to root: give them to us, move to results02/
     kx tms "chown -R $(id -u):$(id -g) /shared/current"
     mv "$STAGE" "$OUT/iter_$i"
+    
+    sleep 10
 done
 
 trap - EXIT
 cd "$BASE" || exit 1
-python3 aggregate.py "$OUT"                 # numbers -> results/<run>/aggregate/
-python3 analyze.py "$OUT"                   # figures -> results/<run>/plots/
+python3 aggregate.py "$OUT"                 # numbers -> results02/raw_data/<run>/aggregate/
+python3 analyze.py "$OUT"                   # figures -> results02/plots/<run>/

@@ -22,11 +22,11 @@ tc qdisc add dev eth2 root handle 1: htb default 1
 tc class add dev eth2 parent 1: classid 1:1 htb rate 10mbit ceil 10mbit
 
 # [FIFO] C1, C2: one 125 kB drop-tail FIFO (100 ms)
-tc qdisc add dev eth2 parent 1:1 handle 10: bfifo limit 125000
+#tc qdisc add dev eth2 parent 1:1 handle 10: bfifo limit 125000
 
 # [QoS] C3: strict priority, 125 kB FIFO per band; high band = V2I (EF) + OSPF/BFD (CS6)
-#tc qdisc add dev eth2 parent 1:1 handle 10: prio bands 2 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
-#tc qdisc add dev eth2 parent 10:1 handle 11: bfifo limit 125000
-#tc qdisc add dev eth2 parent 10:2 handle 12: bfifo limit 125000
-#tc filter add dev eth2 parent 10: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc flowid 10:1
-#tc filter add dev eth2 parent 10: protocol ip prio 2 u32 match ip dsfield 0xc0 0xfc flowid 10:1
+tc qdisc add dev eth2 parent 1:1 handle 10: prio bands 2 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+tc qdisc add dev eth2 parent 10:1 handle 11: bfifo limit 125000
+tc qdisc add dev eth2 parent 10:2 handle 12: bfifo limit 125000
+tc filter add dev eth2 parent 10: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc flowid 10:1
+tc filter add dev eth2 parent 10: protocol ip prio 2 u32 match ip dsfield 0xc0 0xfc flowid 10:1
