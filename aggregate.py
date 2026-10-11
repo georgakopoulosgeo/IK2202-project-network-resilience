@@ -18,8 +18,9 @@ BIN = 0.5            # s, same as 'iperf3 -i 0.5' in run_failover.sh
 LATE_MS = 20         # V2I delay budget [4]
 OFFERED_MBPS = 70    # background load: 4 paced TCP flows x 17.5 Mbit/s
 MSS = 1448           # payload bytes per TCP segment (MTU 1500)
-V2I_BYTES = 300      # payload bytes per V2I packet (v2i_sender.py)
-V2I_MBPS = 500 * V2I_BYTES * 8 / 1e6   # V2I goodput if nothing is lost: 500 pkt/s -> 1.2 Mbit/s
+V2I_RATE = 1000      # V2I packets per second (v2i_sender.py)
+V2I_BYTES = 600      # payload bytes per V2I packet (v2i_sender.py)
+V2I_MBPS = V2I_RATE * V2I_BYTES * 8 / 1e6   # V2I goodput if nothing is lost: 4.8 Mbit/s
 STATUS = ["on time", "late", "lost"]
 
 
