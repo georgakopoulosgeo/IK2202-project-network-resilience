@@ -1,0 +1,1 @@
+configuration=c3 mode=steady sender_args= iterations=5 warmup=20s after=80s

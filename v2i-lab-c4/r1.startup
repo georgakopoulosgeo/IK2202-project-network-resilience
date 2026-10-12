@@ -31,11 +31,11 @@ tc class add dev eth2 parent 1: classid 1:1 htb rate 10mbit ceil 10mbit
 #tc filter add dev eth2 parent 10: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc flowid 10:1
 #tc filter add dev eth2 parent 10: protocol ip prio 2 u32 match ip dsfield 0xc0 0xfc flowid 10:1
 
-# [SHARE] C4: weighted share, V2I 4 Mbit/s / TCP 6 Mbit/s guaranteed (borrow only unused)
-# V2I needs 5.14 Mbit/s on the wire; the excess is dropped by a short queue:
-# 7.5 kB = ~15 ms at 4 Mbit/s, so V2I that gets through stays within the 20 ms budget
-tc class add dev eth2 parent 1:1 classid 1:10 htb rate 5mbit ceil 10mbit prio 0
-tc class add dev eth2 parent 1:1 classid 1:20 htb rate 5mbit ceil 10mbit prio 1
+# [SHARE] C4: rate share, V2I 6 Mbit/s / TCP 4 Mbit/s guaranteed (a class borrows only what the other leaves unused)
+# 6 Mbit/s > the 5.14 Mbit/s V2I needs on the wire, so C4 only differs from C3 when V2I surges.
+# Short V2I queue: 7.5 kB = ~10 ms at 6 Mbit/s, so surge excess is dropped instead of arriving late
+tc class add dev eth2 parent 1:1 classid 1:10 htb rate 6mbit ceil 10mbit prio 0
+tc class add dev eth2 parent 1:1 classid 1:20 htb rate 4mbit ceil 10mbit prio 1
 tc qdisc add dev eth2 parent 1:10 handle 11: bfifo limit 7500
 tc qdisc add dev eth2 parent 1:20 handle 12: bfifo limit 125000
 tc filter add dev eth2 parent 1: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc flowid 1:10

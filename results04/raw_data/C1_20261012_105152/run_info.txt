@@ -1,0 +1,1 @@
+configuration=c1 iterations=5 warmup=20s after=80s
