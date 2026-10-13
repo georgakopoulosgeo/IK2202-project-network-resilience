@@ -1,0 +1,29 @@
+Configuration 1 steady: OSPF only, steady V2I traffic (10 runs)
+- Convergence time = 31.83 ± 1.06 s
+- V2I on time / late / lost = 27.1% / 33.0% / 39.8%
+- V2I packet loss = 39.85%
+- Cumulative packet loss = 35.39%
+
+Configuration 2 steady: OSPF + BFD, steady V2I traffic (10 runs)
+- Convergence time = 0.27 ± 0.03 s
+- V2I on time / late / lost = 0.5% / 98.9% / 0.6%
+- V2I packet loss = 0.60%
+- Cumulative packet loss = 1.06%
+
+Configuration 3 steady: OSPF + BFD + strict priority, steady V2I traffic (10 runs)
+- Convergence time = 0.29 ± 0.04 s
+- V2I on time / late / lost = 99.6% / 0.0% / 0.4%
+- V2I packet loss = 0.37%
+- Cumulative packet loss = 0.53%
+
+Configuration 3 surge: OSPF + BFD + strict priority, surge V2I traffic (10 runs)
+- Convergence time = 0.28 ± 0.04 s
+- V2I on time / late / lost = 99.6% / 0.0% / 0.3%
+- V2I packet loss = 0.32%
+- Cumulative packet loss = 0.54%
+
+Configuration 4 surge: OSPF + BFD + rate share (V2I 6 / TCP 4 Mbit/s), surge V2I traffic (10 runs)
+- Convergence time = 0.28 ± 0.03 s
+- V2I on time / late / lost = 92.4% / 0.0% / 7.6%
+- V2I packet loss = 7.55%
+- Cumulative packet loss = 5.91%

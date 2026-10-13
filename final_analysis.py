@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-# Final figures for the presentation: ONE figure per run (configuration + traffic mode).
-#   python3 final_analysis.py results04
-# Every run folder (a folder with iter_*/ inside) under the given results folder is used;
-# the steady/surge mode is detected from the V2I send rate. If a configuration was run twice
-# in the same mode, the newest run is used.
-# Output, in results_plots/ next to this script:
-#   C1_steady.png, C2_steady.png, C3_steady.png, C3_surge.png, C4_surge.png, ...
-#   C3_vs_C4_surge.png   TCP and V2I during the surge, strict priority vs rate share (bars)
-#   summary.csv          all numbers (mean and std over the iterations)
+# Final figures and key numbers of the failover experiments.
 #
-# Each run figure has 2 panels on the same time axis, with the same scales in every figure:
-#   left:  throughput received by the TMS: background TCP and V2I (Mbit/s)
-#   right: V2I one-way delay and TCP round-trip time (ms), 20 ms V2I budget
-# Under the title: share of V2I messages sent after the failure that were on time, late
-# (arrived after > 20 ms) or lost (never arrived).
-import glob, json, os, re, sys
+#   python3 final_analysis.py                            reads results_iter10/
+#   python3 final_analysis.py results_iter10 results04   several folders (the newest run of each
+#                                                        configuration + traffic mode is used)
+# Output:
+#   final_plots/timeline_<config>_<mode>.png   left: throughput received, right: delay with the
+#                                              key numbers as a legend
+#   key_numbers.txt                            the same key numbers, for the table in the report
+#
+# Lines are the median of the runs per 0.5 s, the band shows the middle 50 % of the runs.
+# C1 shows one typical run (median convergence time): its runs reroute between ~31 and ~40 s,
+# so an average of them would draw a slow ramp that no run actually has.
+import glob, json, os, sys
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -22,286 +20,202 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
-from matplotlib.ticker import FixedLocator, FixedFormatter, NullLocator
-from aggregate import load_v2i, BIN, LATE_MS, V2I_BYTES
+from aggregate import load_v2i, BIN, LATE_MS, MSS, V2I_BYTES
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR = os.path.join(BASE, "results_plots")
-T0, T1 = -20.0, 80.0                 # time window around the failure (s)
-NORMAL_RATE = 1000                   # V2I packets/s (v2i_sender.py RATE)
-SURGE_THRESHOLD = 1.4 * NORMAL_RATE  # a 0.5 s bin sending more than this is part of the surge
-GRID = np.round(np.arange(T0, T1, BIN), 3)
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+OUT_DIR = "final_plots"
+T0, T1 = -20, 80                                  # seconds around the failure
+TIME = np.round(np.arange(T0, T1, BIN), 3)        # start of every 0.5 s bin
+SURGE_RATE = 1800                                 # V2I messages/s during the surge
 
-NAMES = {"C1": "OSPF only",   # shown as "Configuration 1: OSPF only"
-         "C2": "OSPF + BFD",
-         "C3": "OSPF + BFD + strict priority",
+NAMES = {"C1": "OSPF only", "C2": "OSPF + BFD", "C3": "OSPF + BFD + strict priority",
          "C4": "OSPF + BFD + rate share (V2I 6 / TCP 4 Mbit/s)"}
-
-# colours: two series (validated categorical slots 1-2); red = lost V2I packets and the 20 ms budget
-V2I_C, TCP_C = "#2a78d6", "#eb6834"
-ONTIME_C, LATE_C, LOST_C = "#0ca30c", "#fab219", "#d03b3b"
-INK, INK2, GRIDC, BAND, CAP = "#1b1b1a", "#52514e", "#e6e5e0", "#8a8984", "#b9b8b2"
-plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
-                     "font.size": 13, "axes.titlesize": 15, "axes.labelsize": 13,
-                     "xtick.labelsize": 12, "ytick.labelsize": 12, "legend.fontsize": 12,
-                     "text.color": INK, "axes.labelcolor": INK, "xtick.color": INK2, "ytick.color": INK2,
-                     "axes.edgecolor": INK2, "axes.linewidth": 0.8, "grid.color": GRIDC, "grid.linewidth": 0.8,
-                     "axes.spines.top": False, "axes.spines.right": False, "savefig.dpi": 200})
+TCP_C, V2I_C, LOST_C, CAP_C, GREY = "#eb6834", "#2a78d6", "#d03b3b", "#b9b8b2", "#52514e"
+plt.rcParams.update({"font.size": 13, "axes.spines.top": False, "axes.spines.right": False,
+                     "grid.color": "#e6e5e0", "savefig.dpi": 200})
 
 
-# ---------------------------------------------------------------- loading one iteration
-def load_tcp(d, t_fail):
-    """0.5 s iperf3 intervals: throughput received by the TMS and the RTT of the 4 flows.
-    RTT = average of the flows weighted by the bytes they sent in the interval: a flow that
-    sends nothing keeps reporting its last (stale) RTT, so it must not count."""
-    j = json.load(open(f"{d}/iperf3.json"))
-    t0 = (int(open(f"{d}/t_iperf").read()) - t_fail) / 1e9
-    received = j.get("server_output_json", j)["intervals"]
+def load_iteration(folder):
+    """One iteration -> time series in 0.5 s bins, key numbers, surge window (or None)."""
+    v2i, t_fail = load_v2i(folder)                # one row per V2I message sent (see aggregate.py)
+    v2i["bin"] = np.round(np.floor(v2i.t / BIN) * BIN, 3)
+    lost = v2i.status == "lost"
+
+    # V2I: throughput received (by arrival time), mean delay and share lost (by send time)
+    arrived = v2i[~lost]
+    arrival_bin = np.round(np.floor((arrived.t + arrived.delay_ms / 1000) / BIN) * BIN, 3)
+    ts = pd.DataFrame(index=TIME)
+    ts["v2i_mbps"] = arrived.groupby(arrival_bin).size() * V2I_BYTES * 8 / BIN / 1e6
+    ts["v2i_delay_ms"] = v2i.groupby("bin").delay_ms.mean()
+    ts["v2i_lost_share"] = lost.groupby(v2i.bin).mean()
+
+    # TCP: one iperf3 interval every 0.5 s (4 flows together)
+    iperf = json.load(open(f"{folder}/iperf3.json"))
+    t_start = (int(open(f"{folder}/t_iperf").read()) - t_fail) / 1e9
+    received = iperf.get("server_output_json", iperf)["intervals"]
     rows = []
-    for snd, rcv in zip(j["intervals"], received):
-        active = [s for s in snd["streams"] if s["bytes"] > 0]
-        sent = sum(s["bytes"] for s in active)
-        rows.append({"t": round(round((t0 + snd["sum"]["start"]) / BIN) * BIN, 3),
+    for sent, rcv in zip(iperf["intervals"], received):
+        active = [s for s in sent["streams"] if s["bytes"] > 0]    # idle flows report an old RTT
+        retrans = sent["sum"]["retransmits"]
+        rows.append({"t": round(round((t_start + sent["sum"]["start"]) / BIN) * BIN, 3),
                      "tcp_mbps": rcv["sum"]["bits_per_second"] / 1e6,
-                     "tcp_rtt_ms": sum(s["rtt"] * s["bytes"] for s in active) / sent / 1000 if sent else np.nan})
-    return pd.DataFrame(rows).groupby("t").mean().reindex(GRID)
+                     "tcp_rtt_ms": np.mean([s["rtt"] for s in active]) / 1000 if active else np.nan,
+                     "retrans": retrans,
+                     "segments": rcv["sum"]["bytes"] / MSS + retrans})
+    tcp = pd.DataFrame(rows).groupby("t").agg({"tcp_mbps": "mean", "tcp_rtt_ms": "mean",
+                                               "retrans": "sum", "segments": "sum"})
+    ts["tcp_mbps"] = tcp.tcp_mbps
+    ts["tcp_rtt_ms"] = tcp.tcp_rtt_ms
+    ts[["v2i_mbps", "tcp_mbps", "v2i_lost_share"]] = ts[["v2i_mbps", "tcp_mbps", "v2i_lost_share"]].fillna(0)
 
-
-def load_iteration(d):
-    v2i, t_fail = load_v2i(d)                       # one row per V2I packet sent (aggregate.py)
-    b = np.round(np.floor(v2i.t / BIN) * BIN, 3)    # 0.5 s bin of the send time
-    sent_per_s = b.value_counts().sort_index() / BIN
-    surge_bins = sent_per_s[sent_per_s > SURGE_THRESHOLD].index
-    surge = (surge_bins.min(), surge_bins.max() + BIN) if len(surge_bins) else None
-
-    counts = pd.crosstab(b, v2i.status).reindex(columns=["on time", "late", "lost"], fill_value=0)
-    ts = (counts.div(counts.sum(axis=1), axis=0) * 100).reindex(GRID)
-    ts.columns = ["ontime", "late", "lost"]
-    ts["v2i_delay_ms"] = v2i.delay_ms.groupby(b).mean().reindex(GRID)
-    arrived = v2i.dropna(subset=["delay_ms"])
-    b_rx = np.round(np.floor((arrived.t + arrived.delay_ms / 1000) / BIN) * BIN, 3)
-    ts["v2i_mbps"] = (arrived.groupby(b_rx).size() * V2I_BYTES * 8 / BIN / 1e6).reindex(GRID).fillna(0)
-    ts = ts.join(load_tcp(d, t_fail))
-
+    # key numbers, for everything sent after the failure
     after = v2i[v2i.t >= 0]
-    conv = (after.rx_ns.min() - t_fail) / 1e9       # first packet over the backup
-    in_surge = (lambda t: (t >= surge[0]) & (t < surge[1])) if surge else (lambda t: t != t)
-    tcp_back = ts.index[(ts.index >= conv) & (ts.tcp_mbps > 0.5)]
+    tcp_after = tcp[tcp.index >= 0]
+    v2i_lost = (after.status == "lost").sum()
+    numbers = {
+        "convergence_s": (after.rx_ns.min() - t_fail) / 1e9,     # first V2I message over the backup
+        "v2i_on_time_pct": 100 * (after.status == "on time").mean(),
+        "v2i_late_pct": 100 * (after.status == "late").mean(),
+        "v2i_loss_pct": 100 * v2i_lost / len(after),
+        # V2I lost + TCP segments lost (TCP retransmits every segment the network dropped)
+        "cumulative_loss_pct": 100 * (v2i_lost + tcp_after.retrans.sum()) / (len(after) + tcp_after.segments.sum()),
+    }
 
-    def v2i_shares(v):
-        s = v.status.value_counts(normalize=True).reindex(["on time", "late", "lost"], fill_value=0) * 100
-        return dict(zip(["ontime_pct", "late_pct", "lost_pct"], s))
-
-    m = {"convergence_s": conv, "tcp_back_s": tcp_back.min() if len(tcp_back) else np.nan,
-         "v2i_sent_after": int((v2i.t >= 0).sum()),
-         "v2i_lost_after": int(((v2i.t >= 0) & (v2i.status == "lost")).sum()),
-         "v2i_late_after": int(((v2i.t >= 0) & (v2i.status == "late")).sum())}
-    t = ts.index.to_series()
-    phases = {"pre": (v2i.t < 0, t < 0),
-              "post": ((v2i.t >= 0) & ~in_surge(v2i.t), (t >= conv) & ~in_surge(t))}
-    if surge:
-        phases["surge"] = (in_surge(v2i.t), in_surge(t))
-    for ph, (vmask, tmask) in phases.items():
-        # V2I shares count every message sent in the phase (after the failure: including the outage);
-        # delays and throughputs only after the traffic was rerouted
-        m.update({f"v2i_{k}_{ph}": x for k, x in v2i_shares(v2i[vmask]).items()})
-        sel = ts[tmask.values]
-        m[f"v2i_delay_ms_{ph}"] = sel.v2i_delay_ms.mean()
-        m[f"v2i_mbps_{ph}"] = sel.v2i_mbps.mean()
-        m[f"tcp_mbps_{ph}"] = sel.tcp_mbps.mean()
-        m[f"tcp_rtt_ms_{ph}"] = sel.tcp_rtt_ms.mean()
-    lost_t = v2i.t[(v2i.status == "lost") & (v2i.t >= T0) & (v2i.t < T1)].values
-    return ts, m, surge, lost_t
+    # surge = 0.5 s bins in which the sender sent more than 1.4 x the normal 1000 messages/s
+    sent_per_s = v2i.groupby("bin").size() / BIN
+    surge_bins = sent_per_s[sent_per_s > 1400].index
+    surge = (surge_bins.min(), surge_bins.max() + BIN) if len(surge_bins) > 0 else None
+    return ts, numbers, surge
 
 
-def load_run(run):
-    iters = sorted(glob.glob(f"{run}/iter_*"), key=lambda p: int(p.rsplit("_", 1)[1]))
-    series, rows, surges, lost = [], [], [], []
-    for d in iters:
+def load_run(run_folder):
+    series, numbers, surges = [], [], []
+    for folder in sorted(glob.glob(f"{run_folder}/iter_*")):
         try:
-            ts, m, surge, lost_t = load_iteration(d)
-        except Exception as e:
-            print(f"  skipping {d}: {e}")
+            ts, nums, surge = load_iteration(folder)
+        except Exception as e:                    # e.g. iperf3 killed by its timeout
+            print(f"  skipping {folder}: {e}")
             continue
         series.append(ts)
-        rows.append(m)
+        numbers.append(nums)
         surges.append(surge)
-        lost.append(lost_t)
-    return series, pd.DataFrame(rows), surges, lost
+    return series, pd.DataFrame(numbers), surges
 
 
-# ---------------------------------------------------------------- plotting
-def fmt(df, col, unit="", dec=1):
-    """mean (± std when there are several iterations)"""
-    x = df[col].dropna()
-    if x.empty:
-        return "–"
-    s = f"{x.mean():.{dec}f}"
-    if len(x) > 1 and round(x.std(), dec) > 0:      # "± 0.0" is noise on a slide
-        s += f" ± {x.std():.{dec}f}"
-    return s + unit
-
-
-def line_with_band(ax, series, col, color, floor=None):
-    """mean over the iterations (line) and their min-max range (light band)"""
-    data = pd.concat([s[col] for s in series], axis=1)
+def draw(ax, series, column, color, floor=None):
+    """median of the runs (line) and the middle 50 % of the runs (band)"""
+    data = pd.concat([s[column] for s in series], axis=1)
     if floor is not None:
-        data = data.clip(lower=floor)
-    x = np.append(data.index.values, T1)
-    def step(y):
-        return np.append(y.values, y.values[-1])
+        data = data.clip(lower=floor)             # log axis: show 0 as "≈0"
     if len(series) > 1:
-        ax.fill_between(x, step(data.min(axis=1)), step(data.max(axis=1)), step="post",
-                        color=color, alpha=0.15, lw=0)
-    ax.step(x, step(data.mean(axis=1)), where="post", color=color, lw=2.2)
+        ax.fill_between(data.index, data.quantile(0.25, axis=1), data.quantile(0.75, axis=1),
+                        step="post", color=color, alpha=0.2, lw=0)
+    ax.step(data.index, data.median(axis=1), where="post", color=color, lw=2)
 
 
-def log_axis(ax, lo, hi, ticks, labels):
-    ax.set_yscale("log")
-    ax.set_ylim(lo, hi)
-    ax.yaxis.set_major_locator(FixedLocator(ticks))
-    ax.yaxis.set_major_formatter(FixedFormatter(labels))
-    ax.yaxis.set_minor_locator(NullLocator())
+def plot_run(name, series, numbers, surges, path):
+    config, mode = name.split("_")
+    if config == "C1":                            # one typical run: the one with the median convergence
+        i = (numbers.convergence_s - numbers.convergence_s.median()).abs().idxmin()
+        series = [series[i]]
+        convergence = numbers.convergence_s[i]
+    else:
+        convergence = numbers.convergence_s.mean()
 
-
-def plot_run(config, mode, series, m, surges, path):
-    surge = None
-    if any(surges):
-        valid = [s for s in surges if s]
-        surge = (np.mean([s[0] for s in valid]), np.mean([s[1] for s in valid]))
-    conv = m.convergence_s.mean()
     fig, (thr, dly) = plt.subplots(1, 2, figsize=(17, 6.8))
-    fig.subplots_adjust(left=0.06, right=0.99, top=0.82, bottom=0.22, wspace=0.18)
-
+    fig.subplots_adjust(left=0.06, right=0.99, top=0.88, bottom=0.25, wspace=0.18)
     for ax in (thr, dly):
         ax.set_xlim(T0, T1)
         ax.set_xlabel("time since the primary link failed (s)")
         ax.grid(True)
-        ax.set_axisbelow(True)
-        if surge:
-            ax.axvspan(*surge, color=BAND, alpha=0.18, lw=0, zorder=0)
-        ax.axvline(0, color=INK, lw=1.4, zorder=5)
-        ax.axvline(conv, color=INK2, lw=1.4, ls="--", zorder=5)
+        if mode == "surge":
+            start = np.mean([s[0] for s in surges if s])
+            end = np.mean([s[1] for s in surges if s])
+            ax.axvspan(start, end, color="#8a8984", alpha=0.2, lw=0)
+        ax.axvline(0, color="black", lw=1.4)
+        ax.axvline(convergence, color=GREY, lw=1.4, ls="--")
 
-    # left: throughput
-    thr.step([T0, 0, T1], [100, 10, 10], where="post", color=CAP, lw=3, zorder=1)
-    line_with_band(thr, series, "tcp_mbps", TCP_C, floor=0.1)
-    line_with_band(thr, series, "v2i_mbps", V2I_C, floor=0.1)
-    log_axis(thr, 0.08, 200, [0.1, 1, 10, 100], ["≈0", "1", "10", "100"])
+    # left: throughput received
+    thr.step([T0, 0, T1], [100, 10, 10], where="post", color=CAP_C, lw=3)
+    draw(thr, series, "tcp_mbps", TCP_C, floor=0.1)
+    draw(thr, series, "v2i_mbps", V2I_C, floor=0.1)
+    thr.set_yscale("log")
+    thr.set_ylim(0.08, 200)
+    thr.set_yticks([0.1, 1, 10, 100], ["≈0", "1", "10", "100"])
+    thr.minorticks_off()
     thr.set_ylabel("throughput received (Mbit/s)")
 
-    # right: delay
+    # right: delay, and a strip at the bottom that gets darker the more V2I messages are lost
     dly.axhline(LATE_MS, color=LOST_C, lw=1.8, ls=":")
-    line_with_band(dly, series, "tcp_rtt_ms", TCP_C)
-    line_with_band(dly, series, "v2i_delay_ms", V2I_C)
-    log_axis(dly, 0.3, 3000, [1, 10, 100, 1000], ["1", "10", "100", "1000"])
+    draw(dly, series, "tcp_rtt_ms", TCP_C)
+    draw(dly, series, "v2i_delay_ms", V2I_C)
+    lost = pd.concat([s.v2i_lost_share for s in series], axis=1).mean(axis=1)
+    for t, share in lost.items():
+        if share > 0:
+            dly.axvspan(t, t + BIN, ymin=0, ymax=0.04, color=LOST_C, alpha=min(1, 0.15 + 2 * share), lw=0)
+    dly.set_yscale("log")
+    dly.set_ylim(0.15, 30000)                     # room at the top for the key numbers
+    dly.set_yticks([1, 10, 100, 1000], ["1", "10", "100", "1000"])
+    dly.minorticks_off()
     dly.set_ylabel("delay (ms)")
+    dly.legend(handles=[Patch(alpha=0, label=line) for line in key_numbers(numbers)],
+               title=f"After Failure", loc="upper right",
+               handlelength=0, handletextpad=0, fontsize=11, title_fontsize=11, framealpha=0.9)
 
-    conv_txt = f"{conv:.2f} s" if conv < 1 else f"{conv:.1f} s"
-    fig.suptitle(f"Configuration {config[1:]}: {NAMES.get(config, '')}  ·  {mode} V2I traffic  ·  "
-                 f"average convergence {conv_txt}", fontsize=17, fontweight="bold", x=0.06, ha="left", y=0.975)
-
-    # V2I messages sent after the failure: coloured pills, placed one after the other
-    sent = m.v2i_sent_after.mean()
-    lost = 100 * m.v2i_lost_after.mean() / sent
-    late = 100 * m.v2i_late_after.mean() / sent
-    renderer = fig.canvas.get_renderer()
-    inv = fig.transFigure.inverted()
-    x, y = 0.06, 0.885
-    t = fig.text(x, y, "V2I messages after the failure:", fontsize=14, color=INK, va="center")
-    x = inv.transform(t.get_window_extent(renderer))[1][0] + 0.012
-    for label, val, fc, tc in (("on time", 100 - lost - late, ONTIME_C, "white"),
-                               ("late", late, LATE_C, INK), ("lost", lost, LOST_C, "white")):
-        t = fig.text(x, y, f"{label}  {val:.1f}%", fontsize=14, fontweight="bold", color=tc, va="center",
-                     bbox=dict(boxstyle="round,pad=0.4", fc=fc, ec="none"))
-        x = inv.transform(t.get_window_extent(renderer))[1][0] + 0.022
-
-    handles = [Line2D([], [], color=TCP_C, lw=2.2, label="background TCP (throughput / round-trip time)"),
-               Line2D([], [], color=V2I_C, lw=2.2, label="V2I telemetry (throughput / one-way delay)"),
-               Line2D([], [], color=LOST_C, lw=1.8, ls=":", label=f"{LATE_MS} ms V2I budget"),
-               Line2D([], [], color=CAP, lw=3, label="link capacity (100 → 10 Mbit/s backup)"),
-               Line2D([], [], color=INK, lw=1.4, label="primary link fails"),
-               Line2D([], [], color=INK2, lw=1.4, ls="--", label="traffic rerouted (average)")]
-    if surge:
-        handles.append(Patch(color=BAND, alpha=0.35, label="V2I surge (1800 msg/s)"))
-    fig.legend(handles=handles, loc="lower center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 0.0),
-               handlelength=2.4, columnspacing=1.8)
+    fig.suptitle(f"Configuration {config[1:]}: {NAMES[config]} + {mode} V2I traffic", x=0.06, ha="left",
+                 fontsize=16, fontweight="bold")
+    legend = [Line2D([], [], color=TCP_C, lw=2, label="background TCP (throughput / round-trip time)"),
+              Line2D([], [], color=V2I_C, lw=2, label="V2I telemetry (throughput / one-way delay)"),
+              Patch(color=LOST_C, label="V2I lost messages"),
+              Line2D([], [], color=LOST_C, lw=1.8, ls=":", label=f"{LATE_MS} ms V2I budget"),
+              Line2D([], [], color=CAP_C, lw=3, label="link capacity (100 → 10 Mbit/s backup)"),
+              Line2D([], [], color="black", lw=1.4, label="primary link fails"),
+              Line2D([], [], color=GREY, lw=1.4, ls="--", label="traffic rerouted to the backup")]
+    if mode == "surge":
+        legend.append(Patch(color="#8a8984", alpha=0.35, label=f"V2I surge ({SURGE_RATE} msg/s)"))
+    fig.legend(handles=legend, loc="lower center", ncol=4, frameon=False)
     fig.savefig(path)
     plt.close(fig)
 
 
-def plot_surge_comparison(c3, c4, path):
-    """During the surge: what strict priority (C3) and rate share (C4) give TCP and V2I."""
-    panels = [("tcp_mbps_surge", "TCP throughput (Mbit/s)", TCP_C, 1),
-              ("tcp_rtt_ms_surge", "TCP round-trip time (ms)", TCP_C, 0),
-              ("v2i_lost_pct_surge", "V2I messages lost (%)", V2I_C, 1)]
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5.2))
-    fig.subplots_adjust(left=0.05, right=0.99, top=0.8, bottom=0.14, wspace=0.3)
-    for ax, (col, label, color, dec) in zip(axes, panels):
-        vals = [c3[col].mean(), c4[col].mean()]
-        errs = [c3[col].std(), c4[col].std()]
-        ax.bar([0, 1], vals, width=0.5, color=color, yerr=errs, capsize=5,
-               error_kw=dict(ecolor=INK2, lw=1.2))
-        top = max(vals) * 1.22 or 1
-        for x, v in zip([0, 1], vals):
-            ax.text(x, v + top * 0.03, f"{v:.{dec}f}", ha="center", va="bottom", fontsize=14, fontweight="bold")
-        ax.set_ylim(0, top)
-        ax.set_xticks([0, 1], ["Configuration 3\nstrict priority", "Configuration 4\nrate share"])
-        ax.set_title(label, loc="left", fontsize=14)
-        ax.grid(True, axis="y")
-        ax.set_axisbelow(True)
-        ax.tick_params(axis="x", length=0)
-    fig.suptitle("During the 10 s V2I surge", fontsize=17, fontweight="bold", x=0.05, ha="left", y=0.97)
-    fig.savefig(path)
-    plt.close(fig)
+def key_numbers(numbers):
+    """mean (± std) over the runs, for the legend and key_numbers.txt"""
+    mean, std = numbers.mean(), numbers.std()
+    return [f"Convergence time = {mean.convergence_s:.2f} ± {std.convergence_s:.2f} s",
+            f"V2I on time / late / lost = {mean.v2i_on_time_pct:.1f}% / {mean.v2i_late_pct:.1f}% / "
+            f"{mean.v2i_loss_pct:.1f}%",
+            f"V2I packet loss = {mean.v2i_loss_pct:.2f}%",
+            f"Cumulative packet loss = {mean.cumulative_loss_pct:.2f}%"]
 
 
-# ---------------------------------------------------------------- main
-def find_runs(root):
-    """every folder with iter_*/ inside, newest last"""
-    runs = {os.path.dirname(p) for p in glob.glob(f"{root}/**/iter_*", recursive=True) if os.path.isdir(p)}
-    return sorted(runs, key=lambda r: os.path.basename(r))
-
-
-def main(root):
-    os.makedirs(OUT_DIR, exist_ok=True)
-    chosen = {}
-    for run in find_runs(root.rstrip("/")):
-        config = re.match(r"(C\d)", os.path.basename(run))
-        if not config:
-            continue
-        print(f"{run}")
-        series, m, surges, _ = load_run(run)
+def main():
+    folders = sys.argv[1:] or ["results_iter10"]
+    # every run folder: <folder>/.../C2_20261013_170435/iter_1, iter_2, ...
+    runs = sorted({os.path.dirname(p) for f in folders for p in glob.glob(f"{f}/**/C?_*/iter_1", recursive=True)},
+                  key=os.path.basename)          # oldest first, so the newest run of a config wins
+    loaded = {}
+    for run in runs:
+        print(run)
+        series, numbers, surges = load_run(run)
         if not series:
             continue
-        mode = "surge" if sum(bool(s) for s in surges) > len(surges) / 2 else "steady"
-        key = f"{config.group(1)}_{mode}"
-        if key in chosen:
-            print(f"  {key}: replaces the older run {chosen[key][0]}")
-        chosen[key] = (run, series, m, surges)
+        mode = "surge" if surges[0] else "steady"
+        loaded[f"{os.path.basename(run)[:2]}_{mode}"] = (series, numbers, surges)
 
-    rows = []
-    for key in sorted(chosen):
-        run, series, m, surges = chosen[key]
-        config, mode = key.split("_")
-        path = os.path.join(OUT_DIR, f"{key}.png")
-        plot_run(config, mode, series, m, surges, path)
-        stats = m.agg(["mean", "std"]).T
-        row = {"figure": key, "run": os.path.relpath(run, BASE), "iterations": len(m)}
-        for col in stats.index:
-            row[f"{col}_mean"], row[f"{col}_std"] = stats.loc[col, "mean"], stats.loc[col, "std"]
-        rows.append(row)
-        print(f"  -> {os.path.relpath(path, BASE)}")
-    if "C3_surge" in chosen and "C4_surge" in chosen:
-        path = os.path.join(OUT_DIR, "C3_vs_C4_surge.png")
-        plot_surge_comparison(chosen["C3_surge"][2], chosen["C4_surge"][2], path)
-        print(f"  -> {os.path.relpath(path, BASE)}")
-    pd.DataFrame(rows).round(3).to_csv(os.path.join(OUT_DIR, "summary.csv"), index=False)
-    print(f"summary -> {os.path.relpath(os.path.join(OUT_DIR, 'summary.csv'), BASE)}")
+    os.makedirs(OUT_DIR, exist_ok=True)
+    text = []
+    for name in sorted(loaded):
+        series, numbers, surges = loaded[name]
+        path = f"{OUT_DIR}/timeline_{name}.png"
+        plot_run(name, series, numbers, surges, path)
+        config, mode = name.split("_")
+        text.append(f"Configuration {config[1:]} {mode}: {NAMES[config]}, {mode} V2I traffic ({len(numbers)} runs)")
+        text += ["- " + line for line in key_numbers(numbers)] + [""]
+        print(f"  -> {path}")
+    with open("key_numbers.txt", "w") as f:
+        f.write("\n".join(text))
+    print("  -> key_numbers.txt")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("usage: python3 final_analysis.py <results folder>   e.g. results04")
-        sys.exit(1)
-    main(sys.argv[1])
+    main()

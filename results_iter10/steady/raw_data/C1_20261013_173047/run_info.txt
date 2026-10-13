@@ -1,0 +1,1 @@
+configuration=c1 mode=steady sender_args= iterations=10 warmup=20s after=80s
