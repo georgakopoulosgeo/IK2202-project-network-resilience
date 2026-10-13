@@ -25,7 +25,7 @@ WARMUP=20                           # s of normal traffic before the failure
 AFTER=80                            # s observed after the failure (C1 needs ~40 s to converge)
 DUR=$((WARMUP + AFTER))
 RUN=${CONF^^}_$(date +%Y%m%d_%H%M%S)
-OUT=$BASE/results04/$MODE/raw_data/$RUN   # final place of the data
+OUT=$BASE/results_iter10/$MODE/raw_data/$RUN   # final place of the data
 STAGE=$LAB/shared/current           # the same folder is /shared/current inside the devices
 
 # kathara commands only work inside the folder of the deployed lab

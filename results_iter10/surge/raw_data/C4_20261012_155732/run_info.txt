@@ -1,0 +1,1 @@
+configuration=c4 mode=surge sender_args=40 10 iterations=10 warmup=20s after=80s
