@@ -1,29 +1,60 @@
 Configuration 1 steady: OSPF only, steady V2I traffic (10 runs)
 - Convergence time = 31.83 ± 1.06 s
-- V2I on time / late / lost = 27.1% / 33.0% / 39.8%
-- V2I packet loss = 39.85%
-- Cumulative packet loss = 35.39%
+- V2I on time = 27.11 ± 1.15%
+- V2I late = 33.04 ± 0.65%
+- V2I lost = 39.85 ± 1.33%
+- Cumulative packet loss = 35.39 ± 1.20%
+- V2I delay after reroute = 92.86 ± 1.46 ms
+- Background traffic mean RTT after reroute = 96.2 ± 2.0 ms
 
 Configuration 2 steady: OSPF + BFD, steady V2I traffic (10 runs)
 - Convergence time = 0.27 ± 0.03 s
-- V2I on time / late / lost = 0.5% / 98.9% / 0.6%
-- V2I packet loss = 0.60%
-- Cumulative packet loss = 1.06%
+- V2I on time = 0.51 ± 0.04%
+- V2I late = 98.89 ± 0.05%
+- V2I lost = 0.60 ± 0.06%
+- Cumulative packet loss = 1.06 ± 0.08%
+- V2I delay after reroute = 93.04 ± 0.28 ms
+- Background traffic mean RTT after reroute = 96.6 ± 0.4 ms
 
 Configuration 3 steady: OSPF + BFD + strict priority, steady V2I traffic (10 runs)
 - Convergence time = 0.29 ± 0.04 s
-- V2I on time / late / lost = 99.6% / 0.0% / 0.4%
-- V2I packet loss = 0.37%
-- Cumulative packet loss = 0.53%
+- V2I on time = 99.60 ± 0.13%
+- V2I late = 0.04 ± 0.11%
+- V2I lost = 0.37 ± 0.05%
+- Cumulative packet loss = 0.53 ± 0.04%
+- V2I delay after reroute = 1.15 ± 0.10 ms
+- Background traffic mean RTT after reroute = 190.5 ± 0.7 ms
 
 Configuration 3 surge: OSPF + BFD + strict priority, surge V2I traffic (10 runs)
 - Convergence time = 0.28 ± 0.04 s
-- V2I on time / late / lost = 99.6% / 0.0% / 0.3%
-- V2I packet loss = 0.32%
-- Cumulative packet loss = 0.54%
+- V2I on time = 99.64 ± 0.09%
+- V2I late = 0.04 ± 0.06%
+- V2I lost = 0.32 ± 0.04%
+- Cumulative packet loss = 0.54 ± 0.09%
+- V2I delay after reroute = 1.15 ± 0.06 ms
+- Background traffic mean RTT after reroute = 191.3 ± 0.9 ms
+- During the surge (10.0 ± 0.0 s):
+-   - V2I on time = 100.00 ± 0.00%
+-   - V2I late = 0.00 ± 0.00%
+-   - V2I lost = 0.00 ± 0.00%
+-   - V2I delay = 1.09 ± 0.09 ms
+-   - Cumulative packet loss = 0.16 ± 0.05%
+-   - Background traffic throughput = 0.71 ± 0.03 Mbit/s
+-   - Background traffic mean RTT = 1160.9 ± 71.4 ms
 
 Configuration 4 surge: OSPF + BFD + rate share (V2I 6 / TCP 4 Mbit/s), surge V2I traffic (10 runs)
 - Convergence time = 0.28 ± 0.03 s
-- V2I on time / late / lost = 92.4% / 0.0% / 7.6%
-- V2I packet loss = 7.55%
-- Cumulative packet loss = 5.91%
+- V2I on time = 92.41 ± 0.17%
+- V2I late = 0.04 ± 0.06%
+- V2I lost = 7.55 ± 0.12%
+- Cumulative packet loss = 5.91 ± 0.24%
+- V2I delay after reroute = 0.62 ± 0.05 ms
+- Background traffic mean RTT after reroute = 190.6 ± 1.2 ms
+- During the surge (10.0 ± 0.0 s):
+-   - V2I on time = 64.88 ± 0.24%
+-   - V2I late = 0.06 ± 0.18%
+-   - V2I lost = 35.06 ± 0.07%
+-   - V2I delay = 9.64 ± 0.06 ms
+-   - Cumulative packet loss = 29.68 ± 0.07%
+-   - Background traffic throughput = 3.83 ± 0.02 Mbit/s
+-   - Background traffic mean RTT = 231.2 ± 2.7 ms
